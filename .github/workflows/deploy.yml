@@ -1,0 +1,69 @@
+name: Publish to server
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+
+  push_to_registry:
+    name: Publish to server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+      
+      - name: Log in to Docker Hub
+        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_REPO_NAME }}
+          tags: latest
+          labels: latest
+          
+      - name: Build and push Docker image
+        uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Push pages on server
+        uses: Pendect/action-rsyncer@v2.0.0
+        env:
+            DEPLOY_KEY: ${{secrets.SSH_KEY}}
+        with:
+            flags: '-avc --delete'
+            options: ''
+            ssh_options: ''
+            src: '././quiz'
+            dest: 'root@"${{secrets.SERVER_HOST}}":/usr/share/nginx/html'
+
+      - name: Push build on server
+        uses: Pendect/action-rsyncer@v2.0.0
+        env:
+            DEPLOY_KEY: ${{secrets.SSH_KEY}}
+        with:
+            flags: '-avc --delete'
+            options: ''
+            ssh_options: ''
+            src: '.'
+            dest: 'root@"${{secrets.SERVER_HOST}}":/build'
+
+      - name: Connect and run script
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: 22
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          password: ${{ secrets.PASSWORD }}
+          script_stop: true
+          script: sh ../build/build.sh
